@@ -1,70 +1,18 @@
-name: Build and Deploy
-
-on:
-  push:
-    branches:
-      - master
-
+name: GitHub Actions Demo
+run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
+on: [push]
 jobs:
-  build:
+  Explore-GitHub-Actions:
     runs-on: ubuntu-latest
-    env:
-      GOPATH_HEAD: ${{ github.workspace }}
-      GOPATH_BASE: ${{ github.workspace }}
-      DOCKER_REPO: ${{ secrets.DOCKER_REPO }}
-      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-      PROJECT_USERNAME: ${{ github.repository_owner }}
-      PROJECT_REPONAME: ${{ split(github.repository, '/')[1] }}
-
     steps:
-      # Checkout кода
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      # Установка Go
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.10'
-
-      # Установка переменных окружения (аналог setup environment)
-      - name: Setup environment
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
+      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
+      - name: List files in the repository
         run: |
-          if [ "${{ github.repository_owner }}" == "Securing-DevOps" ]; then
-            dr="securingdevops"
-          else
-            dr="${{ secrets.DOCKER_USERNAME }}"
-          fi
-          echo "DOCKER_REPO=$dr" >> $GITHUB_ENV
-
-      # Создание директорий
-      - name: Create directories
-        run: |
-          mkdir -p "${GOPATH_BASE}"
-          mkdir -p "${GOPATH_HEAD}/bin"
-
-      # Тестирование приложения
-      - name: Testing application
-        run: |
-          go test github.com/${{ github.repository_owner }}/${{ split(github.repository, '/')[1] }}
-
-      # Сборка и публикация Docker образа
-      - name: Build and Push Docker image
-        if: github.ref == 'refs/heads/master'
-        run: |
-          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
-          go install --ldflags '-extldflags "-static"' github.com/${{ github.repository_owner }}/${{ split(github.repository, '/')[1] }}
-          mkdir bin
-          cp "$GOPATH_HEAD/bin/${{ split(github.repository, '/')[1] }}" bin/invoicer
-          docker build -t $DOCKER_REPO/${{ split(github.repository, '/')[1] }} .
-          docker images --no-trunc | awk '/^$DOCKER_REPO\/.*invoicer/ {print $3}' | tee docker-image-shasum256.txt
-          docker push $DOCKER_REPO/${{ split(github.repository, '/')[1] }}
-
-      # Сохранение хэша образа как артефакта (аналог CIRCLE_ARTIFACTS)
-      - name: Upload Docker Image SHA256
-        if: github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v3
-        with:
-          name: docker-image-shasum256
-          path: docker-image-shasum256.txt
+          ls ${{ github.workspace }}
+      - run: echo "🍏 This job's status is ${{ job.status }}."
