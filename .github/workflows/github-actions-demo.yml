@@ -1,18 +1,68 @@
-name: GitHub Actions Demo
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
-on: [push]
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - master
+
 jobs:
-  Explore-GitHub-Actions:
+  build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v4
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Go 1.10
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.10'
+        id: go
+
+      - name: Setup environment
         run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+          export GOPATH_HEAD="${GITHUB_WORKSPACE}"
+          export GOPATH_BASE="${GITHUB_WORKSPACE}"
+          export DOCKER_REPO="securingdevops"
+          echo "GOPATH_HEAD=${GOPATH_HEAD}" >> $GITHUB_ENV
+          echo "GOPATH_BASE=${GOPATH_BASE}" >> $GITHUB_ENV
+          echo "DOCKER_REPO=${DOCKER_REPO}" >> $GITHUB_ENV
+
+      - name: Create directories
+        run: |
+          mkdir -p "${GOPATH_BASE}"
+          mkdir -p "${GOPATH_HEAD}/bin"
+
+      - name: Run tests
+        run: |
+          go test github.com/Sergey-Mirzoyan/invoicer-chapter2
+
+      - name: Build binary
+        run: |
+          go install --ldflags '-extldflags "-static"' github.com/Sergey-Mirzoyan/invoicer-chapter2
+          mkdir -p bin
+          cp "${GITHUB_WORKSPACE}/bin/invoicer-chapter2" bin/invoicer
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.Sergey-Mirzoyan }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.DOCKER_REPO }}/invoicer-chapter2:latest
+
+      - name: Save Docker image SHA
+        run: |
+          docker inspect ${{ env.DOCKER_REPO }}/invoicer-chapter2:latest --format='{{.Id}}' > docker-image-shasum256.txt
+          cat docker-image-shasum256.txt
+
+      - name: Upload SHA as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-image-sha
+          path: docker-image-shasum256.txt
