@@ -1,74 +1,70 @@
-name: CI/CD Pipeline
+name: Build and Deploy
 
 on:
   push:
     branches:
-      - main
       - master
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     env:
-      PROJECT_NAME: invoicer-chapter2
-      DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_REPO }}/invoicer-chapter2
+      GOPATH_HEAD: ${{ github.workspace }}
+      GOPATH_BASE: ${{ github.workspace }}
+      DOCKER_REPO: ${{ secrets.DOCKER_REPO }}
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      PROJECT_USERNAME: ${{ github.repository_owner }}
+      PROJECT_REPONAME: ${{ split(github.repository, '/')[1] }}
 
     steps:
-      # 1. Скачать код
+      # Checkout кода
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. Установить Go 1.10 (как в оригинале)
+      # Установка Go
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.10'
-        id: go
 
-      # 3. Проверить версию Go
-      - name: Print Go version
-        run: echo "Go version: ${{ steps.go.outputs.go-version }}"
-
-      # 4. Запустить тесты
-      - name: Run tests
+      # Установка переменных окружения (аналог setup environment)
+      - name: Setup environment
         run: |
-          go test ./...
+          if [ "${{ github.repository_owner }}" == "Securing-DevOps" ]; then
+            dr="securingdevops"
+          else
+            dr="${{ secrets.DOCKER_USERNAME }}"
+          fi
+          echo "DOCKER_REPO=$dr" >> $GITHUB_ENV
 
-      # 5. Собрать бинарник
-      - name: Build binary
+      # Создание директорий
+      - name: Create directories
         run: |
-          mkdir -p bin
-          go build -o bin/invoicer --ldflags '-extldflags "-static"' .
+          mkdir -p "${GOPATH_BASE}"
+          mkdir -p "${GOPATH_HEAD}/bin"
 
-      # 6. Установить Docker и собрать образ
-      - name: Set up Docker
-        uses: docker/setup-qemu-action@v2
-      - uses: docker/setup-buildx-action@v2
-
-      # 7. Залогиниться в Docker Hub
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # 8. Собрать Docker-образ
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ env.DOCKER_IMAGE_NAME }}:latest
-
-      # 9. Сохранить хэш образа (как в CircleCI)
-      - name: Save Docker image SHA
+      # Тестирование приложения
+      - name: Testing application
         run: |
-          docker inspect ${{ env.DOCKER_IMAGE_NAME }}:latest --format='{{.Id}}' > docker-image-shasum256.txt
-          cat docker-image-shasum256.txt
+          go test github.com/${{ github.repository_owner }}/${{ split(github.repository, '/')[1] }}
 
-      # 10. Загрузить артефакт (SHA образа)
-      - name: Upload SHA as artifact
+      # Сборка и публикация Docker образа
+      - name: Build and Push Docker image
+        if: github.ref == 'refs/heads/master'
+        run: |
+          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+          go install --ldflags '-extldflags "-static"' github.com/${{ github.repository_owner }}/${{ split(github.repository, '/')[1] }}
+          mkdir bin
+          cp "$GOPATH_HEAD/bin/${{ split(github.repository, '/')[1] }}" bin/invoicer
+          docker build -t $DOCKER_REPO/${{ split(github.repository, '/')[1] }} .
+          docker images --no-trunc | awk '/^$DOCKER_REPO\/.*invoicer/ {print $3}' | tee docker-image-shasum256.txt
+          docker push $DOCKER_REPO/${{ split(github.repository, '/')[1] }}
+
+      # Сохранение хэша образа как артефакта (аналог CIRCLE_ARTIFACTS)
+      - name: Upload Docker Image SHA256
+        if: github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v3
         with:
-          name: docker-image-sha
+          name: docker-image-shasum256
           path: docker-image-shasum256.txt
